@@ -1,0 +1,21 @@
+# Dépendances Node.js (Le plus important !)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Fichiers d'environnement (Ne JAMAIS push tes mots de passe)
+.env
+.env.local
+
+# Dossiers de build (générés automatiquement)
+dist/
+.next/
+out/
+build/
+
+# Ton volume de base de données local (Très important pour ne pas push la BDD)
+data/db/
+
+# Fichiers système (Mac/Windows)
+.DS_Store
+Thumbs.db

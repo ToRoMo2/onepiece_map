@@ -1,0 +1,24 @@
+{
+  "name": "apps-server",
+  "version": "1.0.0",
+  "description": "Backend du Projet Log Pose",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "one-piece",
+    "epitech",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "nodemon": "^3.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}

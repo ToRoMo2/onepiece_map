@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgis/postgis:15-3.3 # Image Postgres avec support Géo
+    container_name: op_database
+    restart: always
+    environment:
+      POSTGRES_USER: luffy
+      POSTGRES_PASSWORD: meat
+      POSTGRES_DB: grandline
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+
+  backend:
+    build: ./apps-server
+    container_name: op_backend
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./apps-server:/usr/src/app
+    environment:
+      DATABASE_URL: postgres://luffy:meat@db:5432/grandline
+    depends_on:
+      - db
+
+  #frontend:
+   # build: ./apps-client
+    #container_name: op_frontend
+    #ports:
+     # - "3000:3000"
+    #volumes:
+     # - ./apps-client:/usr/src/app
+    #depends_on:
+    #  - backend
