@@ -20,6 +20,7 @@ services:
     command: npm run dev
     volumes:
       - ./apps-server:/usr/src/app
+      - /usr/src/app/node_modules
     environment:
       DATABASE_URL: postgres://luffy:meat@db:5432/grandline
       CHOKIDAR_USEPOLLING: "true"

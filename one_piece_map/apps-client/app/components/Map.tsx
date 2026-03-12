@@ -11,6 +11,7 @@ type OnePieceMapProps = {
   islands: Island[];
   selectedIslandId: string | null;
   onSelectIsland: (islandId: string) => void;
+  onGlobeInteraction: () => void;
   focusCoordinates: { lat: number; lon: number } | null;
 };
 
@@ -259,6 +260,138 @@ function Planet() {
   );
 }
 
+// ─── Globe label helpers (canvas-sprite, no font download needed) ─────────────
+
+function makeLabelTexture(text: string, color: string, opacity: number): THREE.CanvasTexture {
+  const cw = 512;
+  const ch = 96;
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not get 2D context for label texture");
+  ctx.clearRect(0, 0, cw, ch);
+
+  const fs = 40;
+  ctx.font = `700 ${fs}px Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Thick dark outline for readability against any background
+  ctx.strokeStyle = "rgba(0,0,0,0.90)";
+  ctx.lineWidth = 10;
+  ctx.lineJoin = "round";
+  ctx.strokeText(text, cw / 2, ch / 2);
+
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = color;
+  ctx.fillText(text, cw / 2, ch / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+type GlobeLabelProps = {
+  lat: number;
+  lon: number;
+  text: string;
+  /** World-unit height of the sprite; width = height × (512/96) */
+  scale: number;
+  color: string;
+  opacity?: number;
+};
+
+function GlobeLabel({ lat, lon, text, scale, color, opacity = 1 }: GlobeLabelProps) {
+  const position = useMemo(() => latLonToVector3(lat, lon, 1.05), [lat, lon]);
+  const material = useMemo(() => {
+    const tex = makeLabelTexture(text, color, opacity);
+    return new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: true,   // occluded naturally by the opaque globe mesh
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+  }, [text, color, opacity]);
+
+  const ASPECT = 512 / 96;
+  return <sprite position={position} material={material} scale={[scale * ASPECT, scale, 1]} />;
+}
+
+// ─── World navigation labels ─────────────────────────────────────────────────
+
+function WorldLabels() {
+  return (
+    <group>
+      {/* ── Four Blue Seas ── */}
+      <GlobeLabel lat={-48} lon={90}  text="EAST BLUE"  scale={0.22} color="#7dd3fc" />
+      <GlobeLabel lat={-48} lon={-90} text="WEST BLUE"  scale={0.22} color="#93c5fd" />
+      <GlobeLabel lat={48}  lon={-90} text="NORTH BLUE" scale={0.22} color="#60a5fa" />
+      <GlobeLabel lat={48}  lon={90}  text="SOUTH BLUE" scale={0.22} color="#86efac" />
+
+      {/* ── Grand Line zones ── */}
+      <GlobeLabel lat={0} lon={135} text="PARADISE"  scale={0.20} color="#c084fc" />
+      <GlobeLabel lat={0} lon={-25} text="NEW WORLD" scale={0.20} color="#f87171" />
+
+      {/* ── Calm Belts – both hemispheres, both sides ── */}
+      <GlobeLabel lat={20}  lon={90}  text="CALM BELT" scale={0.12} color="#bfdbfe" opacity={0.82} />
+      <GlobeLabel lat={-20} lon={90}  text="CALM BELT" scale={0.12} color="#bfdbfe" opacity={0.82} />
+      <GlobeLabel lat={20}  lon={-90} text="CALM BELT" scale={0.12} color="#bfdbfe" opacity={0.82} />
+      <GlobeLabel lat={-20} lon={-90} text="CALM BELT" scale={0.12} color="#bfdbfe" opacity={0.82} />
+
+      {/* ── Red Line – lon=0 and lon=±180 seam, north & south ── */}
+      <GlobeLabel lat={38}  lon={0}   text="RED LINE" scale={0.12} color="#fca5a5" opacity={0.9} />
+      <GlobeLabel lat={-38} lon={0}   text="RED LINE" scale={0.12} color="#fca5a5" opacity={0.9} />
+      <GlobeLabel lat={38}  lon={180} text="RED LINE" scale={0.12} color="#fca5a5" opacity={0.9} />
+      <GlobeLabel lat={-38} lon={180} text="RED LINE" scale={0.12} color="#fca5a5" opacity={0.9} />
+    </group>
+  );
+}
+
+// ─── Compass synchroniser (must live inside Canvas) ───────────────────────────
+
+function CompassSync({ compassRef }: { compassRef: { current: HTMLDivElement | null } }) {
+  const camera = useThree((state) => state.camera);
+  const northPole = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const scratch = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame(() => {
+    if (!compassRef.current) return;
+    scratch.copy(northPole).project(camera);
+    // atan2(x, y) = angle from screen-up (+y) going clockwise → that's the needle rotation
+    let angle = Math.atan2(scratch.x, scratch.y);
+    // If the north pole is behind the camera (NDC z > 1) flip by 180°
+    if (scratch.z > 1) angle += Math.PI;
+    compassRef.current.style.transform = `rotate(${angle}rad)`;
+  });
+
+  return null;
+}
+
+// ─── Détection d'interaction avec les contrôles ─────────────────────────────
+
+function OrbitControlsInteraction({ onInteraction }: { onInteraction: () => void }) {
+  const controls = useThree((state) => state.controls as OrbitControlsImpl | undefined);
+
+  useEffect(() => {
+    if (!controls) return;
+
+    const handleStart = () => {
+      onInteraction();
+    };
+
+    controls.addEventListener('start', handleStart);
+
+    return () => {
+      controls.removeEventListener('start', handleStart);
+    };
+  }, [controls, onInteraction]);
+
+  return null;
+}
+
 function IslandMarkers({ islands, selectedIslandId, onSelectIsland }: Pick<OnePieceMapProps, "islands" | "selectedIslandId" | "onSelectIsland">) {
   return (
     <group>
@@ -329,9 +462,11 @@ function CameraFocus({ focusCoordinates }: Pick<OnePieceMapProps, "focusCoordina
   return null;
 }
 
-export default function OnePieceMap({ islands, selectedIslandId, onSelectIsland, focusCoordinates }: OnePieceMapProps) {
+export default function OnePieceMap({ islands, selectedIslandId, onSelectIsland, onGlobeInteraction, focusCoordinates }: OnePieceMapProps) {
+  const compassRoseRef = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="h-screen w-full">
+    <div className="relative h-screen w-full">
       <Canvas
         camera={{ position: [0, 0.4, 2.8], fov: 45, near: 0.1, far: 100 }}
         shadows
@@ -354,11 +489,89 @@ export default function OnePieceMap({ islands, selectedIslandId, onSelectIsland,
         />
 
         <Planet />
+        <WorldLabels />
         <IslandMarkers islands={islands} selectedIslandId={selectedIslandId} onSelectIsland={onSelectIsland} />
         <CameraFocus focusCoordinates={focusCoordinates} />
+        <CompassSync compassRef={compassRoseRef} />
+        <OrbitControlsInteraction onInteraction={onGlobeInteraction} />
 
-        <OrbitControls makeDefault enablePan={false} enableDamping dampingFactor={0.08} minDistance={1.45} maxDistance={6} autoRotate={false} autoRotateSpeed={0.15} />
+        <OrbitControls 
+          makeDefault 
+          enablePan={true} 
+          enableZoom={true}
+          enableRotate={true}
+          enableDamping 
+          dampingFactor={0.08} 
+          minDistance={1.45} 
+          maxDistance={8} 
+          autoRotate={false} 
+          autoRotateSpeed={0.15} 
+        />
       </Canvas>
+
+      {/* ─── Compass overlay ──────────────────────────────────────────────────── */}
+      <div
+        className="pointer-events-none absolute bottom-6 right-6 z-10 select-none"
+        aria-hidden="true"
+      >
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full border border-white/20 bg-slate-900/70 shadow-xl shadow-slate-950/60 backdrop-blur-md">
+          {/* This div is rotated every frame by CompassSync via direct DOM mutation */}
+          <div ref={compassRoseRef} className="absolute inset-0 flex items-center justify-center">
+            <svg
+              viewBox="-1 -1 2 2"
+              width="64"
+              height="64"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* Decorative outer ring */}
+              <circle cx="0" cy="0" r="0.90" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="0.04" />
+
+              {/* 8 tick marks around the ring */}
+              {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+                const rad = (deg * Math.PI) / 180;
+                const cx = Math.sin(rad);
+                const cy = -Math.cos(rad);
+                const isCardinal = deg % 90 === 0;
+                return (
+                  <line
+                    key={deg}
+                    x1={cx * 0.78}
+                    y1={cy * 0.78}
+                    x2={cx * 0.90}
+                    y2={cy * 0.90}
+                    stroke={isCardinal ? "rgba(255,255,255,0.40)" : "rgba(255,255,255,0.18)"}
+                    strokeWidth={isCardinal ? 0.048 : 0.028}
+                  />
+                );
+              })}
+
+              {/* North needle – red upper half */}
+              <polygon points="0,-0.64  -0.10,-0.12  0,-0.26  0.10,-0.12" fill="#ef4444" />
+              {/* South needle – pale lower half */}
+              <polygon points="0,0.64  -0.10,0.12  0,0.26  0.10,0.12" fill="rgba(255,255,255,0.50)" />
+
+              {/* E / W side pips */}
+              <polygon points=" 0.64,0   0.15,-0.06   0.28,0   0.15,0.06" fill="rgba(255,255,255,0.38)" />
+              <polygon points="-0.64,0  -0.15,-0.06  -0.28,0  -0.15,0.06" fill="rgba(255,255,255,0.38)" />
+
+              {/* Intercardinal small diamond pips */}
+              <polygon points=" 0.45,-0.45   0.22,-0.30   0.30,-0.22   0.13,-0.37" fill="rgba(255,255,255,0.20)" />
+              <polygon points=" 0.45, 0.45   0.22, 0.30   0.30, 0.22   0.13, 0.37" fill="rgba(255,255,255,0.20)" />
+              <polygon points="-0.45, 0.45  -0.22, 0.30  -0.30, 0.22  -0.13, 0.37" fill="rgba(255,255,255,0.20)" />
+              <polygon points="-0.45,-0.45  -0.22,-0.30  -0.30,-0.22  -0.13,-0.37" fill="rgba(255,255,255,0.20)" />
+
+              {/* Cardinal labels */}
+              <text x="0"     y="-0.66" textAnchor="middle" fontSize="0.26" fill="#ef4444"                   fontFamily="system-ui,sans-serif" fontWeight="bold">N</text>
+              <text x="0"     y="0.90"  textAnchor="middle" fontSize="0.22" fill="rgba(255,255,255,0.52)"    fontFamily="system-ui,sans-serif">S</text>
+              <text x="0.72"  y="0.08"  textAnchor="middle" fontSize="0.22" fill="rgba(255,255,255,0.52)"    fontFamily="system-ui,sans-serif" dominantBaseline="middle">E</text>
+              <text x="-0.72" y="0.08"  textAnchor="middle" fontSize="0.22" fill="rgba(255,255,255,0.52)"    fontFamily="system-ui,sans-serif" dominantBaseline="middle">W</text>
+
+              {/* Centre pivot dot */}
+              <circle cx="0" cy="0" r="0.065" fill="rgba(255,255,255,0.80)" />
+            </svg>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

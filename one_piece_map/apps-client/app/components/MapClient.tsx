@@ -29,6 +29,7 @@ export default function OnePieceMapClient() {
   const [latInput, setLatInput] = useState("");
   const [lonInput, setLonInput] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [showHUD, setShowHUD] = useState(false);
 
   useEffect(() => {
     const loadCoordinates = async () => {
@@ -164,6 +165,16 @@ export default function OnePieceMapClient() {
 
     const randomIsland = filteredIslands[Math.floor(Math.random() * filteredIslands.length)];
     setSelectedIslandId(randomIsland.id);
+    setShowHUD(true);
+  };
+
+  const handleIslandSelect = (islandId: string) => {
+    setSelectedIslandId(islandId);
+    setShowHUD(true);
+  };
+
+  const handleGlobeInteraction = () => {
+    setShowHUD(false);
   };
 
   const updateIslandCoordinates = (islandId: string, coordinates: { lat: number; lon: number }) => {
@@ -257,23 +268,25 @@ export default function OnePieceMapClient() {
   };
 
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-slate-950 text-slate-100">
+    <div className="relative h-screen w-full overflow-hidden bg-slate-950 text-slate-100 select-none" suppressHydrationWarning>
       <OnePieceMap
         islands={filteredIslands}
         selectedIslandId={selectedIsland?.id ?? null}
-        onSelectIsland={setSelectedIslandId}
+        onSelectIsland={handleIslandSelect}
+        onGlobeInteraction={handleGlobeInteraction}
         focusCoordinates={selectedIsland?.coordinates ?? null}
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/60" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/60" suppressHydrationWarning />
 
-      <div className="absolute inset-0 grid grid-rows-[auto_1fr] p-4 sm:p-6">
+      {showHUD && (
+        <div className="absolute inset-0 grid grid-rows-[auto_1fr] p-4 sm:p-6 pointer-events-none" suppressHydrationWarning>
         <header className="pointer-events-auto flex items-center justify-between rounded-2xl border border-white/15 bg-slate-900/60 px-4 py-3 backdrop-blur-md">
-          <div>
+          <div suppressHydrationWarning>
             <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/85">One Piece World Atlas</p>
             <h1 className="text-lg font-semibold text-white sm:text-2xl">Carte interactive des îles</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" suppressHydrationWarning>
             <button
               type="button"
               onClick={() => setAdminMode((previous) => !previous)}
@@ -293,16 +306,16 @@ export default function OnePieceMapClient() {
           </div>
         </header>
 
-        <main className="mt-4 grid min-h-0 gap-4 lg:grid-cols-[minmax(270px,340px)_minmax(300px,390px)] lg:justify-between">
+        <main className="mt-4 grid min-h-0 gap-4 lg:grid-cols-[minmax(270px,340px)_minmax(300px,390px)] lg:justify-between pointer-events-none">
           <section className="pointer-events-auto flex min-h-0 flex-col rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md">
-            <div className="mb-3 grid gap-3">
+            <div className="mb-3 grid gap-3" suppressHydrationWarning>
               <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
                 Recherche
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Nom, saga, tag..."
-                  className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition placeholder:text-slate-400 focus:ring-2"
+                  className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition placeholder:text-slate-400 focus:ring-2 select-text"
                 />
               </label>
 
@@ -311,7 +324,7 @@ export default function OnePieceMapClient() {
                 <select
                   value={region}
                   onChange={(event) => setRegion(event.target.value as (typeof REGIONS)[number])}
-                  className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition focus:ring-2"
+                  className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition focus:ring-2 select-text"
                 >
                   {REGIONS.map((regionValue) => (
                     <option key={regionValue} value={regionValue}>
@@ -355,8 +368,8 @@ export default function OnePieceMapClient() {
 
           <aside className="pointer-events-auto rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md">
             {selectedIsland ? (
-              <div className="flex h-full flex-col">
-                <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex h-full flex-col" suppressHydrationWarning>
+                <div className="mb-3 flex items-center justify-between gap-3" suppressHydrationWarning>
                   <h2 className="text-xl font-semibold text-white">{selectedIsland.name}</h2>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[selectedIsland.status]}`}>
                     {selectedIsland.status}
@@ -368,7 +381,7 @@ export default function OnePieceMapClient() {
 
                 <p className="mb-4 text-sm leading-relaxed text-slate-100">{selectedIsland.summary}</p>
 
-                <div className="mb-4">
+                <div className="mb-4" suppressHydrationWarning>
                   <p className="mb-2 text-xs uppercase tracking-wider text-slate-300">Points clés</p>
                   <ul className="space-y-2 text-sm text-slate-100">
                     {selectedIsland.highlights.map((point) => (
@@ -379,7 +392,7 @@ export default function OnePieceMapClient() {
                   </ul>
                 </div>
 
-                <div className="mt-auto space-y-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-300">
+                <div className="mt-auto space-y-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-300" suppressHydrationWarning>
                   <p>
                     Coordonnées mock: {selectedIsland.coordinates.lat}° / {selectedIsland.coordinates.lon}°
                   </p>
@@ -409,7 +422,7 @@ export default function OnePieceMapClient() {
                                 lon: selectedIsland.coordinates.lon,
                               });
                             }}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
                           />
                         </label>
 
@@ -434,7 +447,7 @@ export default function OnePieceMapClient() {
                                 lon: parsed,
                               });
                             }}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
                           />
                         </label>
                       </div>
@@ -546,6 +559,18 @@ export default function OnePieceMapClient() {
           </aside>
         </main>
       </div>
+      )}
+
+      {!showHUD && (
+        <div className="absolute top-4 left-4 pointer-events-auto z-20">
+          <button
+            onClick={() => setShowHUD(true)}
+            className="rounded-lg bg-slate-900/80 backdrop-blur-md border border-white/20 px-4 py-2 text-white text-sm font-medium hover:bg-slate-800/80 transition shadow-lg"
+          >
+            📍 Afficher les îles
+          </button>
+        </div>
+      )}
     </div>
   );
 }
