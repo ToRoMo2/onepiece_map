@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:15-3.3 # Image Postgres avec support Géo
+    image: postgis/postgis:15-3.3
     container_name: op_database
     restart: always
     environment:
@@ -17,19 +17,26 @@ services:
     container_name: op_backend
     ports:
       - "4000:4000"
+    command: npm run dev
     volumes:
       - ./apps-server:/usr/src/app
     environment:
       DATABASE_URL: postgres://luffy:meat@db:5432/grandline
+      CHOKIDAR_USEPOLLING: "true"
     depends_on:
       - db
 
-  #frontend:
-   # build: ./apps-client
-    #container_name: op_frontend
-    #ports:
-     # - "3000:3000"
-    #volumes:
-     # - ./apps-client:/usr/src/app
-    #depends_on:
-    #  - backend
+  frontend:
+    build: ./apps-client
+    container_name: op_frontend
+    ports:
+      - "3000:3000"
+    command: npm run dev -- --hostname 0.0.0.0 --port 3000
+    volumes:
+      - ./apps-client:/usr/src/app
+      - /usr/src/app/node_modules # L'astuce pour isoler les modules de ton OS
+    environment:
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      - backend
