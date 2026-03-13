@@ -4,13 +4,14 @@ export const MAP_STRUCTURE = {
   grandLine: {
     centerLat: 0,
     halfWidth: 8,
-    softness: 2,
+    softness: 1.2,
   },
   calmBelts: {
-    northCenterLat: 20,
-    southCenterLat: -20,
+    // Belts are directly adjacent to Grand Line: north starts at +8 and south ends at -8.
+    northCenterLat: 13,
+    southCenterLat: -13,
     halfWidth: 5,
-    softness: 2,
+    softness: 1.2,
   },
   corridors: {
     eastBlue: {

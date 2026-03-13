@@ -1,20 +1,28 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Cinzel, Geist_Mono, Spectral } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const atlasDisplay = Cinzel({
+  variable: "--font-atlas-display",
   subsets: ["latin"],
+  weight: ["600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const atlasBody = Spectral({
+  variable: "--font-atlas-body",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const atlasMono = Geist_Mono({
+  variable: "--font-atlas-mono",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
   title: "One Piece World Atlas",
   description: "Carte interactive de l'univers One Piece pour explorer les îles, arcs et informations clés.",
+  applicationName: "One Piece World Atlas",
 };
 
 export default function RootLayout({
@@ -23,10 +31,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${atlasDisplay.variable} ${atlasBody.variable} ${atlasMono.variable} atlas-shell antialiased`}
       >
         {children}
       </body>

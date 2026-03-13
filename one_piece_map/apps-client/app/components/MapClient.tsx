@@ -7,6 +7,14 @@ import { ISLANDS, REGIONS, type Island } from "../data/islands";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const SEA_REGIONS = REGIONS.filter((region): region is Exclude<(typeof REGIONS)[number], "All"> => region !== "All");
 const STATUS_OPTIONS: Island["status"][] = ["Known", "Hidden", "Legendary"];
+const REGION_NOTES: Record<(typeof REGIONS)[number], string> = {
+  All: "Vision complète du monde connu: les quatre Blues, les Calm Belts, Paradise, le Nouveau Monde et les routes majeures de l'équipage.",
+  "East Blue": "Le berceau des débuts: des mers plus ouvertes, des itinéraires iconiques et les premiers compagnons des Mugiwara.",
+  Paradise: "La première moitié de Grand Line, plus lumineuse et aventureuse, où les routes deviennent déjà imprévisibles.",
+  "New World": "La zone la plus instable et la plus dangereuse du globe, dominée par les Empereurs et les archipels légendaires.",
+  "Calm Belt": "Les bandes maritimes sans vent qui encerclent Grand Line. Elles sont pâles, calmes en surface, mais hostiles en profondeur.",
+  "Sky Island": "L'axe vertical du monde: des îles hors mer qui donnent au globe une dimension mythique supplémentaire.",
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -113,6 +121,18 @@ export default function OnePieceMapClient() {
     setLatInput(selectedIsland.coordinates.lat.toFixed(2));
     setLonInput(selectedIsland.coordinates.lon.toFixed(2));
   }, [selectedIsland]);
+
+  const atlasStats = useMemo(() => {
+    const known = islands.filter((island) => island.status === "Known").length;
+    const hidden = islands.filter((island) => island.status === "Hidden").length;
+    const legendary = islands.filter((island) => island.status === "Legendary").length;
+
+    return { known, hidden, legendary };
+  }, [islands]);
+
+  const visibleLegendaryCount = useMemo(() => {
+    return filteredIslands.filter((island) => island.status === "Legendary").length;
+  }, [filteredIslands]);
 
   const pickRandomIsland = () => {
     if (filteredIslands.length === 0) {
@@ -292,13 +312,17 @@ export default function OnePieceMapClient() {
   };
 
   const statusClasses: Record<Island["status"], string> = {
-    Known: "bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/40",
-    Hidden: "bg-amber-500/20 text-amber-100 ring-1 ring-amber-400/40",
-    Legendary: "bg-indigo-500/20 text-indigo-100 ring-1 ring-indigo-300/40",
+    Known: "bg-emerald-500/18 text-emerald-100 ring-1 ring-emerald-300/35",
+    Hidden: "bg-amber-500/18 text-amber-100 ring-1 ring-amber-300/35",
+    Legendary: "bg-violet-500/18 text-violet-100 ring-1 ring-violet-300/35",
   };
 
+  const panelClass = "atlas-panel atlas-card-glow rounded-[28px]";
+  const fieldClass = "atlas-input rounded-2xl px-4 py-3 text-sm text-[#fff7e8] outline-none ring-[rgba(120,217,247,0.45)] transition focus:ring-2 select-text";
+  const smallFieldClass = "atlas-input rounded-xl px-3 py-2 text-sm text-[#fff7e8] outline-none ring-[rgba(120,217,247,0.45)] transition focus:ring-2 select-text";
+
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-slate-950 text-slate-100 select-none" suppressHydrationWarning>
+    <div className="relative h-screen w-full overflow-hidden bg-[#06141d] text-[#f5edd7] select-none" suppressHydrationWarning>
       <OnePieceMap
         islands={filteredIslands}
         selectedIslandId={selectedIsland?.id ?? null}
@@ -307,54 +331,90 @@ export default function OnePieceMapClient() {
         focusCoordinates={selectedIsland?.coordinates ?? null}
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/60" suppressHydrationWarning />
+      <div className="atlas-map-vignette pointer-events-none absolute inset-0" suppressHydrationWarning />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,232,187,0.08),transparent_28%),linear-gradient(180deg,rgba(4,12,18,0.12),rgba(4,12,18,0.4))]" suppressHydrationWarning />
 
-      {showHUD && (
-        <div className="absolute inset-0 grid grid-rows-[auto_1fr] p-4 sm:p-6 pointer-events-none" suppressHydrationWarning>
-          <header className="pointer-events-auto flex items-center justify-between rounded-2xl border border-white/15 bg-slate-900/60 px-4 py-3 backdrop-blur-md">
-            <div suppressHydrationWarning>
-              <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/85">One Piece World Atlas</p>
-              <h1 className="text-lg font-semibold text-white sm:text-2xl">Carte interactive des îles</h1>
+      {showHUD ? (
+        <div className="absolute inset-0 grid grid-rows-[auto_1fr] gap-4 p-4 sm:p-5 lg:p-6 pointer-events-none" suppressHydrationWarning>
+          <header className={`${panelClass} atlas-panel-strong pointer-events-auto flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-end lg:justify-between lg:px-7`}>
+            <div className="max-w-3xl" suppressHydrationWarning>
+              <p className="atlas-overline text-[11px] sm:text-xs">Grand Line Observatory</p>
+              <h1 className="font-display mt-2 text-3xl text-[#fff5dc] sm:text-4xl lg:text-[2.8rem] leading-tight">
+                Globe du monde de One Piece
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#d7d8cd] sm:text-[15px]">
+                Relecture visuelle du monde canonique: Red Line sculptée, Calm Belts lisibles, routes de voyage mises en valeur et fiches d’îles plus désirables à explorer.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3" suppressHydrationWarning>
+                <div className="rounded-2xl border border-[rgba(244,213,141,0.24)] bg-[rgba(255,244,220,0.04)] px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#f4d58d]/80">Monde indexé</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{islands.length} îles</p>
+                </div>
+                <div className="rounded-2xl border border-[rgba(120,217,247,0.22)] bg-[rgba(120,217,247,0.06)] px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#ace7f5]/80">Légendaires visibles</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{visibleLegendaryCount}</p>
+                </div>
+                <div className="rounded-2xl border border-[rgba(239,123,95,0.22)] bg-[rgba(239,123,95,0.06)] px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#f7b59f]/80">Zone active</p>
+                  <p className="mt-1 text-base font-semibold text-white">{region === "All" ? "Monde entier" : region}</p>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2" suppressHydrationWarning>
+
+            <div className="flex flex-wrap items-center gap-2 self-start lg:self-end" suppressHydrationWarning>
               <button
                 type="button"
                 onClick={() => setAdminMode((previous) => !previous)}
-                className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                  adminMode ? "bg-amber-400 text-slate-950 hover:bg-amber-300" : "bg-slate-100/15 text-slate-100 hover:bg-slate-100/25"
+                className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                  adminMode
+                    ? "bg-[#f4d58d] text-[#0b1822] hover:bg-[#f1cb70]"
+                    : "border border-[rgba(244,213,141,0.24)] bg-[rgba(255,245,226,0.08)] text-[#fff4d7] hover:bg-[rgba(255,245,226,0.16)]"
                 }`}
               >
-                {adminMode ? "Admin ON" : "Admin OFF"}
+                {adminMode ? "Mode admin actif" : "Mode admin"}
               </button>
               <button
                 type="button"
                 onClick={pickRandomIsland}
-                className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
+                className="rounded-2xl bg-[linear-gradient(135deg,#f4d58d,#e4a65f)] px-4 py-3 text-sm font-semibold text-[#0b1822] transition hover:brightness-105"
               >
-                Explorer au hasard
+                Route aléatoire
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowHUD(false)}
+                className="rounded-2xl border border-[rgba(120,217,247,0.28)] bg-[rgba(120,217,247,0.08)] px-4 py-3 text-sm font-semibold text-[#dff7ff] transition hover:bg-[rgba(120,217,247,0.16)]"
+              >
+                Laisser le globe respirer
               </button>
             </div>
           </header>
 
-          <main className="mt-4 grid min-h-0 gap-4 lg:grid-cols-[minmax(270px,340px)_minmax(300px,390px)] lg:justify-between pointer-events-none">
-            <section className="pointer-events-auto flex min-h-0 flex-col rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md">
-              <div className="mb-3 grid gap-3" suppressHydrationWarning>
-                <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
-                  Recherche
+          <main className="mt-1 grid min-h-0 gap-4 lg:grid-cols-[minmax(300px,370px)_minmax(330px,430px)] lg:justify-between">
+            <section className={`${panelClass} pointer-events-auto flex min-h-0 flex-col px-5 py-5 sm:px-6`}>
+              <div className="mb-5" suppressHydrationWarning>
+                <p className="atlas-overline text-[10px]">Exploration</p>
+                <h2 className="font-display mt-2 text-2xl text-[#fff6e2]">Atlas des mers</h2>
+                <p className="mt-2 text-sm leading-6 text-[#c8d1d4]">{REGION_NOTES[region]}</p>
+              </div>
+
+              <div className="grid gap-3" suppressHydrationWarning>
+                <label className="grid gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4d8cf]">
+                  Recherche d’îles
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Nom, saga, tag..."
-                    className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition placeholder:text-slate-400 focus:ring-2 select-text"
+                    className={fieldClass}
                   />
                 </label>
 
-                <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
+                <label className="grid gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d4d8cf]">
                   Zone maritime
                   <select
                     value={region}
                     onChange={(event) => setRegion(event.target.value as (typeof REGIONS)[number])}
-                    className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition focus:ring-2 select-text"
+                    className={fieldClass}
                   >
                     {REGIONS.map((regionValue) => (
                       <option key={regionValue} value={regionValue}>
@@ -365,9 +425,27 @@ export default function OnePieceMapClient() {
                 </label>
               </div>
 
-              <p className="mb-2 text-xs text-slate-300">{filteredIslands.length} îles affichées</p>
+              <div className="mt-5 grid grid-cols-3 gap-3" suppressHydrationWarning>
+                <div className="rounded-2xl border border-white/8 bg-[rgba(4,16,25,0.5)] px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#a8c5d1]">Connues</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{atlasStats.known}</p>
+                </div>
+                <div className="rounded-2xl border border-white/8 bg-[rgba(4,16,25,0.5)] px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#d8c9a0]">Cachées</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{atlasStats.hidden}</p>
+                </div>
+                <div className="rounded-2xl border border-white/8 bg-[rgba(4,16,25,0.5)] px-3 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#d7b6ff]">Légendes</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{atlasStats.legendary}</p>
+                </div>
+              </div>
 
-              <ul className="min-h-0 space-y-2 overflow-y-auto pr-1">
+              <div className="mt-5 flex items-center justify-between text-sm text-[#d4d9d7]" suppressHydrationWarning>
+                <p>{filteredIslands.length} îles visibles</p>
+                <p className="text-[#9db7c1]">Clique une route ou une île pour recentrer le globe.</p>
+              </div>
+
+              <ul className="atlas-scrollbar mt-4 min-h-0 space-y-2 overflow-y-auto pr-1">
                 {filteredIslands.map((island) => {
                   const active = selectedIsland?.id === island.id;
                   return (
@@ -375,63 +453,108 @@ export default function OnePieceMapClient() {
                       <button
                         type="button"
                         onClick={() => setSelectedIslandId(island.id)}
-                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
                           active
-                            ? "border-cyan-300/70 bg-cyan-500/15"
-                            : "border-white/10 bg-slate-950/35 hover:border-cyan-500/50 hover:bg-slate-900/80"
+                            ? "border-[rgba(244,213,141,0.5)] bg-[linear-gradient(135deg,rgba(244,213,141,0.16),rgba(120,217,247,0.1))] shadow-[0_16px_40px_rgba(0,0,0,0.25)]"
+                            : "border-[rgba(255,255,255,0.08)] bg-[rgba(4,16,25,0.52)] hover:border-[rgba(120,217,247,0.28)] hover:bg-[rgba(9,28,39,0.88)]"
                         }`}
                       >
-                        <p className="text-sm font-semibold text-white">{island.name}</p>
-                        <p className="mt-1 text-xs text-slate-300">{island.region}</p>
+                        <div className="flex items-start justify-between gap-3" suppressHydrationWarning>
+                          <div>
+                            <p className="text-base font-semibold text-white">{island.name}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#9dc8d8]">{island.region}</p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClasses[island.status]}`}>
+                            {island.status}
+                          </span>
+                        </div>
+                        <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#d0d5d3]">{island.saga}</p>
                       </button>
                     </li>
                   );
                 })}
 
-                {filteredIslands.length === 0 && (
-                  <li className="rounded-xl border border-dashed border-white/20 bg-slate-950/45 px-3 py-5 text-center text-sm text-slate-300">
+                {filteredIslands.length === 0 ? (
+                  <li className="rounded-[22px] border border-dashed border-[rgba(244,213,141,0.18)] bg-[rgba(4,16,25,0.5)] px-4 py-8 text-center text-sm text-[#cfd5d4]">
                     Aucune île trouvée avec ces filtres.
                   </li>
-                )}
+                ) : null}
               </ul>
             </section>
 
-            <aside className="pointer-events-auto rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md overflow-y-auto">
+            <aside className={`${panelClass} atlas-scrollbar pointer-events-auto overflow-y-auto px-5 py-5 sm:px-6`}>
               {selectedIsland ? (
                 <div className="flex h-full flex-col" suppressHydrationWarning>
-                  <div className="mb-3 flex items-center justify-between gap-3" suppressHydrationWarning>
-                    <h2 className="text-xl font-semibold text-white">{selectedIsland.name}</h2>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[selectedIsland.status]}`}>
-                      {selectedIsland.status}
-                    </span>
+                  <div className="flex items-start justify-between gap-4" suppressHydrationWarning>
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[rgba(244,213,141,0.3)] bg-[linear-gradient(135deg,rgba(244,213,141,0.22),rgba(255,255,255,0.05))] font-display text-3xl text-[#fff1c7] shadow-[0_10px_35px_rgba(0,0,0,0.22)]">
+                        {selectedIsland.name.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="atlas-overline text-[10px]">Fiche d’île</p>
+                        <h2 className="font-display mt-2 text-3xl leading-tight text-white">{selectedIsland.name}</h2>
+                        <div className="mt-3 flex flex-wrap items-center gap-2" suppressHydrationWarning>
+                          <span className="rounded-full border border-[rgba(120,217,247,0.22)] bg-[rgba(120,217,247,0.08)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#d7f6ff]">
+                            {selectedIsland.region}
+                          </span>
+                          <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${statusClasses[selectedIsland.status]}`}>
+                            {selectedIsland.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <p className="mb-1 text-xs uppercase tracking-wider text-cyan-200">{selectedIsland.region}</p>
-                  <p className="mb-4 text-sm text-slate-200">{selectedIsland.saga}</p>
+                  <p className="mt-5 text-sm uppercase tracking-[0.22em] text-[#9bc7d8]">{selectedIsland.saga}</p>
+                  <p className="mt-3 text-[15px] leading-7 text-[#ede3cf]">{selectedIsland.summary}</p>
 
-                  <p className="mb-4 text-sm leading-relaxed text-slate-100">{selectedIsland.summary}</p>
+                  <div className="mt-5 flex flex-wrap gap-2" suppressHydrationWarning>
+                    {selectedIsland.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-[rgba(244,213,141,0.16)] bg-[rgba(255,245,226,0.05)] px-3 py-1.5 text-xs font-medium text-[#f5e4be]"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
 
-                  <div className="mb-4" suppressHydrationWarning>
-                    <p className="mb-2 text-xs uppercase tracking-wider text-slate-300">Points clés</p>
-                    <ul className="space-y-2 text-sm text-slate-100">
+                  <div className="mt-6" suppressHydrationWarning>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#c7d3d4]">Moments clés</p>
+                    <ul className="mt-3 grid gap-3 sm:grid-cols-2">
                       {selectedIsland.highlights.map((point) => (
-                        <li key={point} className="rounded-lg bg-slate-950/45 px-3 py-2">
+                        <li
+                          key={point}
+                          className="rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[linear-gradient(180deg,rgba(255,245,226,0.06),rgba(255,255,255,0.02))] px-4 py-4 text-sm leading-6 text-[#fff0d1]"
+                        >
                           {point}
                         </li>
                       ))}
                     </ul>
                   </div>
 
-                  <div className="mt-auto space-y-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-300" suppressHydrationWarning>
-                    <p>
-                      Coordonnées: {selectedIsland.coordinates.lat}° / {selectedIsland.coordinates.lon}°
-                    </p>
-                    {adminMode ? (
-                      <div className="space-y-3">
-                        <p className="text-amber-200">Mode admin: ajoute, supprime et sauvegarde les fiches d&apos;îles en base.</p>
+                  <div className="mt-6 rounded-[24px] border border-[rgba(244,213,141,0.2)] bg-[rgba(4,16,25,0.54)] p-4 text-sm text-[#d2d7d2]" suppressHydrationWarning>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[#f4d58d]/80">Position</p>
+                        <p className="mt-1 font-semibold text-white">
+                          {selectedIsland.coordinates.lat}° / {selectedIsland.coordinates.lon}°
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-[#ace7f5]/80">Visuel</p>
+                        <p className="mt-1 font-semibold text-white">Balise lumineuse et focus caméra</p>
+                      </div>
+                    </div>
+                  </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                  <div className="mt-6 rounded-[24px] border border-[rgba(255,255,255,0.08)] bg-[rgba(4,16,25,0.5)] p-4 text-sm text-[#d1d8d8]" suppressHydrationWarning>
+                    {adminMode ? (
+                      <div className="space-y-4">
+                        <p className="text-sm font-semibold text-[#f4d58d]">Mode admin actif: ajuste les fiches et synchronise les données avec l’API.</p>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Latitude
                             <input
                               type="number"
@@ -452,11 +575,11 @@ export default function OnePieceMapClient() {
                                   lon: selectedIsland.coordinates.lon,
                                 });
                               }}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Longitude
                             <input
                               type="number"
@@ -477,27 +600,27 @@ export default function OnePieceMapClient() {
                                   lon: parsed,
                                 });
                               }}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                              className={smallFieldClass}
                             />
                           </label>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Nom
                             <input
                               value={selectedIsland.name}
                               onChange={(event) => updateSelectedIslandText({ name: event.target.value })}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Région
                             <select
                               value={selectedIsland.region}
                               onChange={(event) => updateSelectedIslandText({ region: event.target.value as Island["region"] })}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              className={smallFieldClass}
                             >
                               {SEA_REGIONS.map((regionValue) => (
                                 <option key={regionValue} value={regionValue}>
@@ -508,31 +631,31 @@ export default function OnePieceMapClient() {
                           </label>
                         </div>
 
-                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                        <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                           Saga
                           <input
                             value={selectedIsland.saga}
                             onChange={(event) => updateSelectedIslandText({ saga: event.target.value })}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                            className={smallFieldClass}
                           />
                         </label>
 
-                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                        <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                           Résumé
                           <textarea
                             value={selectedIsland.summary}
                             onChange={(event) => updateSelectedIslandText({ summary: event.target.value })}
                             rows={3}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                            className={smallFieldClass}
                           />
                         </label>
 
-                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                        <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                           Statut
                           <select
                             value={selectedIsland.status}
                             onChange={(event) => updateSelectedIslandText({ status: event.target.value as Island["status"] })}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            className={smallFieldClass}
                           >
                             {STATUS_OPTIONS.map((statusValue) => (
                               <option key={statusValue} value={statusValue}>
@@ -542,60 +665,60 @@ export default function OnePieceMapClient() {
                           </select>
                         </label>
 
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3">
                           <button
                             type="button"
                             onClick={saveSelectedIsland}
                             disabled={saveStatus === "saving"}
-                            className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
+                            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                               saveStatus === "saved"
                                 ? "bg-emerald-500 text-white"
                                 : saveStatus === "error"
                                   ? "bg-rose-600 text-white"
                                   : saveStatus === "saving"
-                                    ? "bg-amber-500 text-white opacity-60"
-                                    : "bg-green-500 text-slate-950 hover:bg-green-400"
+                                    ? "bg-amber-500 text-white opacity-70"
+                                    : "bg-[linear-gradient(135deg,#89d1a4,#5ab684)] text-[#07141d] hover:brightness-105"
                             }`}
                           >
-                            {saveStatus === "saved" ? "✓ Sauvegardé" : saveStatus === "error" ? "✗ Erreur" : saveStatus === "saving" ? "..." : "Sauver la fiche"}
+                            {saveStatus === "saved" ? "Sauvegardé" : saveStatus === "error" ? "Erreur" : saveStatus === "saving" ? "Envoi..." : "Sauver la fiche"}
                           </button>
                           <button
                             type="button"
                             onClick={deleteSelectedIsland}
                             disabled={deleteStatus === "deleting"}
-                            className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
+                            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                               deleteStatus === "deleted"
                                 ? "bg-emerald-600 text-white"
                                 : deleteStatus === "error"
                                   ? "bg-rose-700 text-white"
                                   : deleteStatus === "deleting"
                                     ? "bg-rose-500/80 text-white opacity-70"
-                                    : "bg-rose-600 text-white hover:bg-rose-500"
+                                    : "bg-[linear-gradient(135deg,#ef7b5f,#d1514c)] text-white hover:brightness-105"
                             }`}
                           >
-                            {deleteStatus === "deleted" ? "✓ Supprimé" : deleteStatus === "error" ? "✗ Erreur" : deleteStatus === "deleting" ? "..." : "Supprimer"}
+                            {deleteStatus === "deleted" ? "Supprimé" : deleteStatus === "error" ? "Erreur" : deleteStatus === "deleting" ? "Suppression..." : "Supprimer"}
                           </button>
                         </div>
 
-                        <div className="border-t border-white/10 pt-3 space-y-2">
-                          <p className="text-amber-100 text-[11px] uppercase tracking-wider">Ajouter une île</p>
+                        <div className="border-t border-white/10 pt-4 space-y-3">
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-[#f4d58d]">Ajouter une île</p>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Nom
                             <input
                               value={adminForm.name}
                               onChange={(event) => setAdminForm((previous) => ({ ...previous, name: event.target.value }))}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <div className="grid grid-cols-2 gap-2">
-                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                               Région
                               <select
                                 value={adminForm.region}
                                 onChange={(event) => setAdminForm((previous) => ({ ...previous, region: event.target.value as Island["region"] }))}
-                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                                className={smallFieldClass}
                               >
                                 {SEA_REGIONS.map((regionValue) => (
                                   <option key={regionValue} value={regionValue}>
@@ -605,12 +728,12 @@ export default function OnePieceMapClient() {
                               </select>
                             </label>
 
-                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                               Statut
                               <select
                                 value={adminForm.status}
                                 onChange={(event) => setAdminForm((previous) => ({ ...previous, status: event.target.value as Island["status"] }))}
-                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                                className={smallFieldClass}
                               >
                                 {STATUS_OPTIONS.map((statusValue) => (
                                   <option key={statusValue} value={statusValue}>
@@ -621,64 +744,64 @@ export default function OnePieceMapClient() {
                             </label>
                           </div>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Saga
                             <input
                               value={adminForm.saga}
                               onChange={(event) => setAdminForm((previous) => ({ ...previous, saga: event.target.value }))}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                             Résumé
                             <textarea
                               value={adminForm.summary}
                               onChange={(event) => setAdminForm((previous) => ({ ...previous, summary: event.target.value }))}
                               rows={3}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
-                            Points clés (1 par ligne)
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
+                            Points clés
                             <textarea
                               value={adminForm.highlights}
                               onChange={(event) => setAdminForm((previous) => ({ ...previous, highlights: event.target.value }))}
                               rows={3}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
-                            Tags (séparés par virgule)
+                          <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
+                            Tags
                             <input
                               value={adminForm.tags}
                               onChange={(event) => setAdminForm((previous) => ({ ...previous, tags: event.target.value }))}
-                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              className={smallFieldClass}
                             />
                           </label>
 
-                          <div className="grid grid-cols-2 gap-2">
-                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                               Latitude
                               <input
                                 type="number"
                                 step={0.1}
                                 value={adminForm.lat}
                                 onChange={(event) => setAdminForm((previous) => ({ ...previous, lat: event.target.value }))}
-                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                                className={smallFieldClass}
                               />
                             </label>
 
-                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            <label className="grid gap-1 text-[11px] uppercase tracking-[0.18em]">
                               Longitude
                               <input
                                 type="number"
                                 step={0.1}
                                 value={adminForm.lon}
                                 onChange={(event) => setAdminForm((previous) => ({ ...previous, lon: event.target.value }))}
-                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                                className={smallFieldClass}
                               />
                             </label>
                           </div>
@@ -687,41 +810,52 @@ export default function OnePieceMapClient() {
                             type="button"
                             onClick={createIsland}
                             disabled={createStatus === "creating"}
-                            className={`w-full rounded-md px-2 py-2 text-[11px] font-medium transition ${
+                            className={`w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${
                               createStatus === "created"
                                 ? "bg-emerald-500 text-white"
                                 : createStatus === "error"
                                   ? "bg-rose-600 text-white"
                                   : createStatus === "creating"
                                     ? "bg-amber-500 text-white opacity-70"
-                                    : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                                    : "bg-[linear-gradient(135deg,#78d9f7,#4da4d4)] text-[#07141d] hover:brightness-105"
                             }`}
                           >
-                            {createStatus === "created" ? "✓ Île ajoutée" : createStatus === "error" ? "✗ Données invalides" : createStatus === "creating" ? "..." : "Ajouter l'île"}
+                            {createStatus === "created" ? "Île ajoutée" : createStatus === "error" ? "Données invalides" : createStatus === "creating" ? "Création..." : "Ajouter l'île"}
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <p>Active le mode admin pour ajuster, ajouter ou supprimer des îles en base.</p>
+                      <p className="leading-6">Active le mode admin pour ajuster les coordonnées, éditer les fiches et enrichir l’atlas avec de nouvelles îles.</p>
                     )}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-300">Sélectionne une île pour voir sa fiche détaillée.</p>
+                <p className="text-sm text-[#cfd5d4]">Sélectionne une île pour afficher sa fiche détaillée.</p>
               )}
             </aside>
           </main>
         </div>
-      )}
+      ) : (
+        <div className="absolute inset-x-0 top-4 z-20 flex justify-between px-4 sm:px-6 pointer-events-none">
+          <div className="pointer-events-auto max-w-sm rounded-[26px] border border-[rgba(244,213,141,0.22)] bg-[linear-gradient(180deg,rgba(8,24,35,0.92),rgba(7,22,33,0.78))] px-5 py-5 shadow-[0_30px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+            <p className="atlas-overline text-[10px]">One Piece World Atlas</p>
+            <h2 className="font-display mt-2 text-2xl text-white">Fais tourner le globe</h2>
+            <p className="mt-2 text-sm leading-6 text-[#d4d9d7]">
+              Explore les mers, zoome sur les routes majeures puis affiche les fiches détaillées quand tu veux.
+            </p>
+            <button
+              onClick={() => setShowHUD(true)}
+              className="mt-4 rounded-2xl bg-[linear-gradient(135deg,#f4d58d,#e4a65f)] px-4 py-3 text-sm font-semibold text-[#0b1822] transition hover:brightness-105"
+            >
+              Ouvrir l’atlas
+            </button>
+          </div>
 
-      {!showHUD && (
-        <div className="absolute top-4 left-4 pointer-events-auto z-20">
-          <button
-            onClick={() => setShowHUD(true)}
-            className="rounded-lg bg-slate-900/80 backdrop-blur-md border border-white/20 px-4 py-2 text-white text-sm font-medium hover:bg-slate-800/80 transition shadow-lg"
-          >
-            📍 Afficher les îles
-          </button>
+          <div className="pointer-events-none hidden items-start lg:flex">
+            <div className="rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(6,20,29,0.64)] px-4 py-2 text-xs uppercase tracking-[0.22em] text-[#d5edf5] backdrop-blur-md">
+              Glisser pour pivoter · Roulette pour zoomer
+            </div>
+          </div>
         </div>
       )}
     </div>
