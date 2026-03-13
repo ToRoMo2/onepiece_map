@@ -1,12 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ISLANDS, REGIONS, type Island } from "../data/islands";
 
-const ISLAND_COORDINATES_STORAGE_KEY = "onepiece:island-coordinates:v1";
-
-type CoordinateOverrides = Record<string, { lat: number; lon: number }>;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const SEA_REGIONS = REGIONS.filter((region): region is Exclude<(typeof REGIONS)[number], "All"> => region !== "All");
+const STATUS_OPTIONS: Island["status"][] = ["Known", "Hidden", "Legendary"];
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -15,6 +15,30 @@ function clamp(value: number, min: number, max: number): number {
 function wrapLongitude(value: number): number {
   return ((((value + 180) % 360) + 360) % 360) - 180;
 }
+
+type AdminFormState = {
+  name: string;
+  region: Island["region"];
+  saga: string;
+  summary: string;
+  highlights: string;
+  tags: string;
+  status: Island["status"];
+  lat: string;
+  lon: string;
+};
+
+const EMPTY_ADMIN_FORM: AdminFormState = {
+  name: "",
+  region: "East Blue",
+  saga: "",
+  summary: "",
+  highlights: "",
+  tags: "",
+  status: "Known",
+  lat: "0",
+  lon: "0",
+};
 
 const OnePieceMap = dynamic(() => import("./Map"), {
   ssr: false,
@@ -29,98 +53,30 @@ export default function OnePieceMapClient() {
   const [latInput, setLatInput] = useState("");
   const [lonInput, setLonInput] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [createStatus, setCreateStatus] = useState<"idle" | "creating" | "created" | "error">("idle");
+  const [deleteStatus, setDeleteStatus] = useState<"idle" | "deleting" | "deleted" | "error">("idle");
   const [showHUD, setShowHUD] = useState(false);
+  const [adminForm, setAdminForm] = useState<AdminFormState>(EMPTY_ADMIN_FORM);
 
-  useEffect(() => {
-    const loadCoordinates = async () => {
-      try {
-        const response = await fetch("http://localhost:4000/api/islands/coordinates");
-        if (!response.ok) {
-          throw new Error("Failed to fetch coordinates");
-        }
-
-        const overrides = (await response.json()) as CoordinateOverrides;
-        if (Object.keys(overrides).length === 0) {
-          return;
-        }
-
-        setIslands((previous) =>
-          previous.map((island) => {
-            const override = overrides[island.id];
-            if (!override) {
-              return island;
-            }
-
-            return {
-              ...island,
-              coordinates: {
-                lat: override.lat,
-                lon: override.lon,
-              },
-            };
-          }),
-        );
-      } catch (error) {
-        console.warn("Could not load coordinates from server, trying localStorage...", error);
-        try {
-          const raw = window.localStorage.getItem(ISLAND_COORDINATES_STORAGE_KEY);
-          if (!raw) {
-            return;
-          }
-
-          const overrides = JSON.parse(raw) as CoordinateOverrides;
-          setIslands((previous) =>
-            previous.map((island) => {
-              const override = overrides[island.id];
-              if (!override) {
-                return island;
-              }
-
-              return {
-                ...island,
-                coordinates: {
-                  lat: override.lat,
-                  lon: override.lon,
-                },
-              };
-            }),
-          );
-        } catch {
-          window.localStorage.removeItem(ISLAND_COORDINATES_STORAGE_KEY);
-        }
+  const loadIslandsFromServer = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/islands`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch islands");
       }
-    };
 
-    loadCoordinates();
+      const data = (await response.json()) as Island[];
+      if (Array.isArray(data) && data.length > 0) {
+        setIslands(data);
+      }
+    } catch (error) {
+      console.warn("Could not load islands from server. Using local fallback.", error);
+    }
   }, []);
 
   useEffect(() => {
-    const overrides = islands.reduce<CoordinateOverrides>((accumulator, island) => {
-      const baseIsland = ISLANDS.find((item) => item.id === island.id);
-      if (!baseIsland) {
-        return accumulator;
-      }
-
-      const latChanged = Math.abs(baseIsland.coordinates.lat - island.coordinates.lat) > 0.0001;
-      const lonChanged = Math.abs(baseIsland.coordinates.lon - island.coordinates.lon) > 0.0001;
-
-      if (latChanged || lonChanged) {
-        accumulator[island.id] = {
-          lat: Number(island.coordinates.lat.toFixed(3)),
-          lon: Number(island.coordinates.lon.toFixed(3)),
-        };
-      }
-
-      return accumulator;
-    }, {});
-
-    if (Object.keys(overrides).length === 0) {
-      window.localStorage.removeItem(ISLAND_COORDINATES_STORAGE_KEY);
-      return;
-    }
-
-    window.localStorage.setItem(ISLAND_COORDINATES_STORAGE_KEY, JSON.stringify(overrides));
-  }, [islands]);
+    loadIslandsFromServer();
+  }, [loadIslandsFromServer]);
 
   const filteredIslands = useMemo(() => {
     const lowerQuery = query.trim().toLowerCase();
@@ -198,67 +154,141 @@ export default function OnePieceMapClient() {
     );
   };
 
-  const resetCoordinates = () => {
-    setIslands(ISLANDS);
-    window.localStorage.removeItem(ISLAND_COORDINATES_STORAGE_KEY);
-  };
+  const saveSelectedIsland = async () => {
+    if (!selectedIsland) {
+      return;
+    }
 
-  const exportCoordinates = async () => {
-    const payload = islands.map((island) => ({
-      id: island.id,
-      name: island.name,
-      coordinates: island.coordinates,
-    }));
-
-    const text = JSON.stringify(payload, null, 2);
+    setSaveStatus("saving");
     try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // no-op
+      const response = await fetch(`${API_BASE_URL}/api/islands/${selectedIsland.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(selectedIsland),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update island");
+      }
+
+      const updated = (await response.json()) as Island;
+      setIslands((previous) => previous.map((island) => (island.id === updated.id ? updated : island)));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (error) {
+      console.error("Error saving island:", error);
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 2000);
     }
   };
 
-  const saveToServer = async () => {
-    setSaveStatus("saving");
+  const deleteSelectedIsland = async () => {
+    if (!selectedIsland) {
+      return;
+    }
+
+    setDeleteStatus("deleting");
     try {
-      const overrides = islands.reduce<CoordinateOverrides>((accumulator, island) => {
-        const baseIsland = ISLANDS.find((item) => item.id === island.id);
-        if (!baseIsland) {
-          return accumulator;
-        }
+      const response = await fetch(`${API_BASE_URL}/api/islands/${selectedIsland.id}`, {
+        method: "DELETE",
+      });
 
-        const latChanged = Math.abs(baseIsland.coordinates.lat - island.coordinates.lat) > 0.0001;
-        const lonChanged = Math.abs(baseIsland.coordinates.lon - island.coordinates.lon) > 0.0001;
+      if (!response.ok) {
+        throw new Error("Failed to delete island");
+      }
 
-        if (latChanged || lonChanged) {
-          accumulator[island.id] = {
-            lat: Number(island.coordinates.lat.toFixed(3)),
-            lon: Number(island.coordinates.lon.toFixed(3)),
-          };
-        }
+      const remaining = islands.filter((island) => island.id !== selectedIsland.id);
+      setIslands(remaining);
+      if (remaining[0]) {
+        setSelectedIslandId(remaining[0].id);
+      }
+      setDeleteStatus("deleted");
+      setTimeout(() => setDeleteStatus("idle"), 2000);
+    } catch (error) {
+      console.error("Error deleting island:", error);
+      setDeleteStatus("error");
+      setTimeout(() => setDeleteStatus("idle"), 2000);
+    }
+  };
 
-        return accumulator;
-      }, {});
+  const createIsland = async () => {
+    const lat = Number(adminForm.lat);
+    const lon = Number(adminForm.lon);
+    const highlights = adminForm.highlights
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const tags = adminForm.tags
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
 
-      const response = await fetch("http://localhost:4000/api/islands/coordinates", {
+    if (!adminForm.name.trim() || !adminForm.saga.trim() || !adminForm.summary.trim() || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setCreateStatus("error");
+      setTimeout(() => setCreateStatus("idle"), 2000);
+      return;
+    }
+
+    setCreateStatus("creating");
+
+    try {
+      const payload = {
+        name: adminForm.name.trim(),
+        region: adminForm.region,
+        saga: adminForm.saga.trim(),
+        summary: adminForm.summary.trim(),
+        highlights,
+        tags,
+        status: adminForm.status,
+        coordinates: {
+          lat: Number(clamp(lat, -89.5, 89.5).toFixed(3)),
+          lon: Number(wrapLongitude(lon).toFixed(3)),
+        },
+      };
+
+      const response = await fetch(`${API_BASE_URL}/api/islands`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(overrides),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save coordinates");
+        throw new Error("Failed to create island");
       }
 
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 2000);
+      const created = (await response.json()) as Island;
+      setIslands((previous) => [...previous, created]);
+      setSelectedIslandId(created.id);
+      setAdminForm(EMPTY_ADMIN_FORM);
+      setCreateStatus("created");
+      setTimeout(() => setCreateStatus("idle"), 2000);
     } catch (error) {
-      console.error("Error saving to server:", error);
-      setSaveStatus("error");
-      setTimeout(() => setSaveStatus("idle"), 2000);
+      console.error("Error creating island:", error);
+      setCreateStatus("error");
+      setTimeout(() => setCreateStatus("idle"), 2000);
     }
+  };
+
+  const updateSelectedIslandText = (partial: Partial<Pick<Island, "name" | "region" | "saga" | "summary" | "status">>) => {
+    if (!selectedIsland) {
+      return;
+    }
+
+    setIslands((previous) =>
+      previous.map((island) => {
+        if (island.id !== selectedIsland.id) {
+          return island;
+        }
+        return {
+          ...island,
+          ...partial,
+        };
+      }),
+    );
   };
 
   const statusClasses: Record<Island["status"], string> = {
@@ -281,284 +311,407 @@ export default function OnePieceMapClient() {
 
       {showHUD && (
         <div className="absolute inset-0 grid grid-rows-[auto_1fr] p-4 sm:p-6 pointer-events-none" suppressHydrationWarning>
-        <header className="pointer-events-auto flex items-center justify-between rounded-2xl border border-white/15 bg-slate-900/60 px-4 py-3 backdrop-blur-md">
-          <div suppressHydrationWarning>
-            <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/85">One Piece World Atlas</p>
-            <h1 className="text-lg font-semibold text-white sm:text-2xl">Carte interactive des îles</h1>
-          </div>
-          <div className="flex items-center gap-2" suppressHydrationWarning>
-            <button
-              type="button"
-              onClick={() => setAdminMode((previous) => !previous)}
-              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                adminMode ? "bg-amber-400 text-slate-950 hover:bg-amber-300" : "bg-slate-100/15 text-slate-100 hover:bg-slate-100/25"
-              }`}
-            >
-              {adminMode ? "Admin ON" : "Admin OFF"}
-            </button>
-            <button
-              type="button"
-              onClick={pickRandomIsland}
-              className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
-            >
-              Explorer au hasard
-            </button>
-          </div>
-        </header>
-
-        <main className="mt-4 grid min-h-0 gap-4 lg:grid-cols-[minmax(270px,340px)_minmax(300px,390px)] lg:justify-between pointer-events-none">
-          <section className="pointer-events-auto flex min-h-0 flex-col rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md">
-            <div className="mb-3 grid gap-3" suppressHydrationWarning>
-              <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
-                Recherche
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Nom, saga, tag..."
-                  className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition placeholder:text-slate-400 focus:ring-2 select-text"
-                />
-              </label>
-
-              <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
-                Zone maritime
-                <select
-                  value={region}
-                  onChange={(event) => setRegion(event.target.value as (typeof REGIONS)[number])}
-                  className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition focus:ring-2 select-text"
-                >
-                  {REGIONS.map((regionValue) => (
-                    <option key={regionValue} value={regionValue}>
-                      {regionValue}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          <header className="pointer-events-auto flex items-center justify-between rounded-2xl border border-white/15 bg-slate-900/60 px-4 py-3 backdrop-blur-md">
+            <div suppressHydrationWarning>
+              <p className="text-xs uppercase tracking-[0.22em] text-cyan-200/85">One Piece World Atlas</p>
+              <h1 className="text-lg font-semibold text-white sm:text-2xl">Carte interactive des îles</h1>
             </div>
+            <div className="flex items-center gap-2" suppressHydrationWarning>
+              <button
+                type="button"
+                onClick={() => setAdminMode((previous) => !previous)}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  adminMode ? "bg-amber-400 text-slate-950 hover:bg-amber-300" : "bg-slate-100/15 text-slate-100 hover:bg-slate-100/25"
+                }`}
+              >
+                {adminMode ? "Admin ON" : "Admin OFF"}
+              </button>
+              <button
+                type="button"
+                onClick={pickRandomIsland}
+                className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
+              >
+                Explorer au hasard
+              </button>
+            </div>
+          </header>
 
-            <p className="mb-2 text-xs text-slate-300">{filteredIslands.length} îles affichées</p>
+          <main className="mt-4 grid min-h-0 gap-4 lg:grid-cols-[minmax(270px,340px)_minmax(300px,390px)] lg:justify-between pointer-events-none">
+            <section className="pointer-events-auto flex min-h-0 flex-col rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md">
+              <div className="mb-3 grid gap-3" suppressHydrationWarning>
+                <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
+                  Recherche
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Nom, saga, tag..."
+                    className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition placeholder:text-slate-400 focus:ring-2 select-text"
+                  />
+                </label>
 
-            <ul className="min-h-0 space-y-2 overflow-y-auto pr-1">
-              {filteredIslands.map((island) => {
-                const active = selectedIsland?.id === island.id;
-                return (
-                  <li key={island.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedIslandId(island.id)}
-                      className={`w-full rounded-xl border px-3 py-3 text-left transition ${
-                        active
-                          ? "border-cyan-300/70 bg-cyan-500/15"
-                          : "border-white/10 bg-slate-950/35 hover:border-cyan-500/50 hover:bg-slate-900/80"
-                      }`}
-                    >
-                      <p className="text-sm font-semibold text-white">{island.name}</p>
-                      <p className="mt-1 text-xs text-slate-300">{island.region}</p>
-                    </button>
-                  </li>
-                );
-              })}
-
-              {filteredIslands.length === 0 && (
-                <li className="rounded-xl border border-dashed border-white/20 bg-slate-950/45 px-3 py-5 text-center text-sm text-slate-300">
-                  Aucune île trouvée avec ces filtres.
-                </li>
-              )}
-            </ul>
-          </section>
-
-          <aside className="pointer-events-auto rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md">
-            {selectedIsland ? (
-              <div className="flex h-full flex-col" suppressHydrationWarning>
-                <div className="mb-3 flex items-center justify-between gap-3" suppressHydrationWarning>
-                  <h2 className="text-xl font-semibold text-white">{selectedIsland.name}</h2>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[selectedIsland.status]}`}>
-                    {selectedIsland.status}
-                  </span>
-                </div>
-
-                <p className="mb-1 text-xs uppercase tracking-wider text-cyan-200">{selectedIsland.region}</p>
-                <p className="mb-4 text-sm text-slate-200">{selectedIsland.saga}</p>
-
-                <p className="mb-4 text-sm leading-relaxed text-slate-100">{selectedIsland.summary}</p>
-
-                <div className="mb-4" suppressHydrationWarning>
-                  <p className="mb-2 text-xs uppercase tracking-wider text-slate-300">Points clés</p>
-                  <ul className="space-y-2 text-sm text-slate-100">
-                    {selectedIsland.highlights.map((point) => (
-                      <li key={point} className="rounded-lg bg-slate-950/45 px-3 py-2">
-                        {point}
-                      </li>
+                <label className="grid gap-1 text-xs font-medium uppercase tracking-wider text-slate-300">
+                  Zone maritime
+                  <select
+                    value={region}
+                    onChange={(event) => setRegion(event.target.value as (typeof REGIONS)[number])}
+                    className="rounded-lg border border-white/15 bg-slate-950/75 px-3 py-2 text-sm text-white outline-none ring-cyan-400/60 transition focus:ring-2 select-text"
+                  >
+                    {REGIONS.map((regionValue) => (
+                      <option key={regionValue} value={regionValue}>
+                        {regionValue}
+                      </option>
                     ))}
-                  </ul>
-                </div>
-
-                <div className="mt-auto space-y-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-300" suppressHydrationWarning>
-                  <p>
-                    Coordonnées mock: {selectedIsland.coordinates.lat}° / {selectedIsland.coordinates.lon}°
-                  </p>
-                  {adminMode ? (
-                    <div className="space-y-3">
-                      <p className="text-amber-200">Mode admin: modifie lat/lon en direct (auto-save local).</p>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
-                          Latitude
-                          <input
-                            type="number"
-                            min={-89.5}
-                            max={89.5}
-                            step={0.1}
-                            value={latInput}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setLatInput(nextValue);
-                              const parsed = Number(nextValue);
-                              if (Number.isNaN(parsed) || !selectedIsland) {
-                                return;
-                              }
-
-                              updateIslandCoordinates(selectedIsland.id, {
-                                lat: parsed,
-                                lon: selectedIsland.coordinates.lon,
-                              });
-                            }}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
-                          />
-                        </label>
-
-                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
-                          Longitude
-                          <input
-                            type="number"
-                            min={-180}
-                            max={180}
-                            step={0.1}
-                            value={lonInput}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setLonInput(nextValue);
-                              const parsed = Number(nextValue);
-                              if (Number.isNaN(parsed) || !selectedIsland) {
-                                return;
-                              }
-
-                              updateIslandCoordinates(selectedIsland.id, {
-                                lat: selectedIsland.coordinates.lat,
-                                lon: parsed,
-                              });
-                            }}
-                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
-                          />
-                        </label>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!selectedIsland) {
-                              return;
-                            }
-                            updateIslandCoordinates(selectedIsland.id, {
-                              lat: selectedIsland.coordinates.lat + 0.5,
-                              lon: selectedIsland.coordinates.lon,
-                            });
-                          }}
-                          className="rounded-md bg-slate-800 px-2 py-1.5 text-[11px] text-white hover:bg-slate-700"
-                        >
-                          Lat +
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!selectedIsland) {
-                              return;
-                            }
-                            updateIslandCoordinates(selectedIsland.id, {
-                              lat: selectedIsland.coordinates.lat - 0.5,
-                              lon: selectedIsland.coordinates.lon,
-                            });
-                          }}
-                          className="rounded-md bg-slate-800 px-2 py-1.5 text-[11px] text-white hover:bg-slate-700"
-                        >
-                          Lat -
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!selectedIsland) {
-                              return;
-                            }
-                            updateIslandCoordinates(selectedIsland.id, {
-                              lat: selectedIsland.coordinates.lat,
-                              lon: selectedIsland.coordinates.lon - 0.5,
-                            });
-                          }}
-                          className="rounded-md bg-slate-800 px-2 py-1.5 text-[11px] text-white hover:bg-slate-700"
-                        >
-                          Lon -
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!selectedIsland) {
-                              return;
-                            }
-                            updateIslandCoordinates(selectedIsland.id, {
-                              lat: selectedIsland.coordinates.lat,
-                              lon: selectedIsland.coordinates.lon + 0.5,
-                            });
-                          }}
-                          className="rounded-md bg-slate-800 px-2 py-1.5 text-[11px] text-white hover:bg-slate-700"
-                        >
-                          Lon +
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <button
-                          type="button"
-                          onClick={saveToServer}
-                          disabled={saveStatus === "saving"}
-                          className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
-                            saveStatus === "saved"
-                              ? "bg-emerald-500 text-white"
-                              : saveStatus === "error"
-                                ? "bg-rose-600 text-white"
-                                : saveStatus === "saving"
-                                  ? "bg-amber-500 text-white opacity-50"
-                                  : "bg-green-500 text-slate-950 hover:bg-green-400"
-                          }`}
-                        >
-                          {saveStatus === "saved" ? "✓ Sauvegardé" : saveStatus === "error" ? "✗ Erreur" : saveStatus === "saving" ? "..." : "Save Server"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={exportCoordinates}
-                          className="rounded-md bg-cyan-500 px-2 py-1.5 text-[11px] font-medium text-slate-950 hover:bg-cyan-400"
-                        >
-                          Export JSON
-                        </button>
-                        <button
-                          type="button"
-                          onClick={resetCoordinates}
-                          className="rounded-md bg-rose-500/90 px-2 py-1.5 text-[11px] font-medium text-white hover:bg-rose-500"
-                        >
-                          Reset
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p>Active le mode admin pour ajuster les positions des îles en direct.</p>
-                  )}
-                </div>
+                  </select>
+                </label>
               </div>
-            ) : (
-              <p className="text-sm text-slate-300">Sélectionne une île pour voir sa fiche détaillée.</p>
-            )}
-          </aside>
-        </main>
-      </div>
+
+              <p className="mb-2 text-xs text-slate-300">{filteredIslands.length} îles affichées</p>
+
+              <ul className="min-h-0 space-y-2 overflow-y-auto pr-1">
+                {filteredIslands.map((island) => {
+                  const active = selectedIsland?.id === island.id;
+                  return (
+                    <li key={island.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedIslandId(island.id)}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                          active
+                            ? "border-cyan-300/70 bg-cyan-500/15"
+                            : "border-white/10 bg-slate-950/35 hover:border-cyan-500/50 hover:bg-slate-900/80"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-white">{island.name}</p>
+                        <p className="mt-1 text-xs text-slate-300">{island.region}</p>
+                      </button>
+                    </li>
+                  );
+                })}
+
+                {filteredIslands.length === 0 && (
+                  <li className="rounded-xl border border-dashed border-white/20 bg-slate-950/45 px-3 py-5 text-center text-sm text-slate-300">
+                    Aucune île trouvée avec ces filtres.
+                  </li>
+                )}
+              </ul>
+            </section>
+
+            <aside className="pointer-events-auto rounded-2xl border border-white/15 bg-slate-900/55 p-4 backdrop-blur-md overflow-y-auto">
+              {selectedIsland ? (
+                <div className="flex h-full flex-col" suppressHydrationWarning>
+                  <div className="mb-3 flex items-center justify-between gap-3" suppressHydrationWarning>
+                    <h2 className="text-xl font-semibold text-white">{selectedIsland.name}</h2>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[selectedIsland.status]}`}>
+                      {selectedIsland.status}
+                    </span>
+                  </div>
+
+                  <p className="mb-1 text-xs uppercase tracking-wider text-cyan-200">{selectedIsland.region}</p>
+                  <p className="mb-4 text-sm text-slate-200">{selectedIsland.saga}</p>
+
+                  <p className="mb-4 text-sm leading-relaxed text-slate-100">{selectedIsland.summary}</p>
+
+                  <div className="mb-4" suppressHydrationWarning>
+                    <p className="mb-2 text-xs uppercase tracking-wider text-slate-300">Points clés</p>
+                    <ul className="space-y-2 text-sm text-slate-100">
+                      {selectedIsland.highlights.map((point) => (
+                        <li key={point} className="rounded-lg bg-slate-950/45 px-3 py-2">
+                          {point}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="mt-auto space-y-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-300" suppressHydrationWarning>
+                    <p>
+                      Coordonnées: {selectedIsland.coordinates.lat}° / {selectedIsland.coordinates.lon}°
+                    </p>
+                    {adminMode ? (
+                      <div className="space-y-3">
+                        <p className="text-amber-200">Mode admin: ajoute, supprime et sauvegarde les fiches d&apos;îles en base.</p>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Latitude
+                            <input
+                              type="number"
+                              min={-89.5}
+                              max={89.5}
+                              step={0.1}
+                              value={latInput}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setLatInput(nextValue);
+                                const parsed = Number(nextValue);
+                                if (Number.isNaN(parsed) || !selectedIsland) {
+                                  return;
+                                }
+
+                                updateIslandCoordinates(selectedIsland.id, {
+                                  lat: parsed,
+                                  lon: selectedIsland.coordinates.lon,
+                                });
+                              }}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                            />
+                          </label>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Longitude
+                            <input
+                              type="number"
+                              min={-180}
+                              max={180}
+                              step={0.1}
+                              value={lonInput}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setLonInput(nextValue);
+                                const parsed = Number(nextValue);
+                                if (Number.isNaN(parsed) || !selectedIsland) {
+                                  return;
+                                }
+
+                                updateIslandCoordinates(selectedIsland.id, {
+                                  lat: selectedIsland.coordinates.lat,
+                                  lon: parsed,
+                                });
+                              }}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Nom
+                            <input
+                              value={selectedIsland.name}
+                              onChange={(event) => updateSelectedIslandText({ name: event.target.value })}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                            />
+                          </label>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Région
+                            <select
+                              value={selectedIsland.region}
+                              onChange={(event) => updateSelectedIslandText({ region: event.target.value as Island["region"] })}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            >
+                              {SEA_REGIONS.map((regionValue) => (
+                                <option key={regionValue} value={regionValue}>
+                                  {regionValue}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          Saga
+                          <input
+                            value={selectedIsland.saga}
+                            onChange={(event) => updateSelectedIslandText({ saga: event.target.value })}
+                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                          />
+                        </label>
+
+                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          Résumé
+                          <textarea
+                            value={selectedIsland.summary}
+                            onChange={(event) => updateSelectedIslandText({ summary: event.target.value })}
+                            rows={3}
+                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2 select-text"
+                          />
+                        </label>
+
+                        <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                          Statut
+                          <select
+                            value={selectedIsland.status}
+                            onChange={(event) => updateSelectedIslandText({ status: event.target.value as Island["status"] })}
+                            className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                          >
+                            {STATUS_OPTIONS.map((statusValue) => (
+                              <option key={statusValue} value={statusValue}>
+                                {statusValue}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={saveSelectedIsland}
+                            disabled={saveStatus === "saving"}
+                            className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
+                              saveStatus === "saved"
+                                ? "bg-emerald-500 text-white"
+                                : saveStatus === "error"
+                                  ? "bg-rose-600 text-white"
+                                  : saveStatus === "saving"
+                                    ? "bg-amber-500 text-white opacity-60"
+                                    : "bg-green-500 text-slate-950 hover:bg-green-400"
+                            }`}
+                          >
+                            {saveStatus === "saved" ? "✓ Sauvegardé" : saveStatus === "error" ? "✗ Erreur" : saveStatus === "saving" ? "..." : "Sauver la fiche"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={deleteSelectedIsland}
+                            disabled={deleteStatus === "deleting"}
+                            className={`rounded-md px-2 py-1.5 text-[11px] font-medium transition ${
+                              deleteStatus === "deleted"
+                                ? "bg-emerald-600 text-white"
+                                : deleteStatus === "error"
+                                  ? "bg-rose-700 text-white"
+                                  : deleteStatus === "deleting"
+                                    ? "bg-rose-500/80 text-white opacity-70"
+                                    : "bg-rose-600 text-white hover:bg-rose-500"
+                            }`}
+                          >
+                            {deleteStatus === "deleted" ? "✓ Supprimé" : deleteStatus === "error" ? "✗ Erreur" : deleteStatus === "deleting" ? "..." : "Supprimer"}
+                          </button>
+                        </div>
+
+                        <div className="border-t border-white/10 pt-3 space-y-2">
+                          <p className="text-amber-100 text-[11px] uppercase tracking-wider">Ajouter une île</p>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Nom
+                            <input
+                              value={adminForm.name}
+                              onChange={(event) => setAdminForm((previous) => ({ ...previous, name: event.target.value }))}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            />
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                              Région
+                              <select
+                                value={adminForm.region}
+                                onChange={(event) => setAdminForm((previous) => ({ ...previous, region: event.target.value as Island["region"] }))}
+                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              >
+                                {SEA_REGIONS.map((regionValue) => (
+                                  <option key={regionValue} value={regionValue}>
+                                    {regionValue}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                              Statut
+                              <select
+                                value={adminForm.status}
+                                onChange={(event) => setAdminForm((previous) => ({ ...previous, status: event.target.value as Island["status"] }))}
+                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              >
+                                {STATUS_OPTIONS.map((statusValue) => (
+                                  <option key={statusValue} value={statusValue}>
+                                    {statusValue}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Saga
+                            <input
+                              value={adminForm.saga}
+                              onChange={(event) => setAdminForm((previous) => ({ ...previous, saga: event.target.value }))}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            />
+                          </label>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Résumé
+                            <textarea
+                              value={adminForm.summary}
+                              onChange={(event) => setAdminForm((previous) => ({ ...previous, summary: event.target.value }))}
+                              rows={3}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            />
+                          </label>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Points clés (1 par ligne)
+                            <textarea
+                              value={adminForm.highlights}
+                              onChange={(event) => setAdminForm((previous) => ({ ...previous, highlights: event.target.value }))}
+                              rows={3}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            />
+                          </label>
+
+                          <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                            Tags (séparés par virgule)
+                            <input
+                              value={adminForm.tags}
+                              onChange={(event) => setAdminForm((previous) => ({ ...previous, tags: event.target.value }))}
+                              className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                            />
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                              Latitude
+                              <input
+                                type="number"
+                                step={0.1}
+                                value={adminForm.lat}
+                                onChange={(event) => setAdminForm((previous) => ({ ...previous, lat: event.target.value }))}
+                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              />
+                            </label>
+
+                            <label className="grid gap-1 text-[11px] uppercase tracking-wider">
+                              Longitude
+                              <input
+                                type="number"
+                                step={0.1}
+                                value={adminForm.lon}
+                                onChange={(event) => setAdminForm((previous) => ({ ...previous, lon: event.target.value }))}
+                                className="rounded-md border border-white/15 bg-slate-900/80 px-2 py-1.5 text-sm text-white outline-none ring-cyan-400/60 focus:ring-2"
+                              />
+                            </label>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={createIsland}
+                            disabled={createStatus === "creating"}
+                            className={`w-full rounded-md px-2 py-2 text-[11px] font-medium transition ${
+                              createStatus === "created"
+                                ? "bg-emerald-500 text-white"
+                                : createStatus === "error"
+                                  ? "bg-rose-600 text-white"
+                                  : createStatus === "creating"
+                                    ? "bg-amber-500 text-white opacity-70"
+                                    : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                            }`}
+                          >
+                            {createStatus === "created" ? "✓ Île ajoutée" : createStatus === "error" ? "✗ Données invalides" : createStatus === "creating" ? "..." : "Ajouter l'île"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p>Active le mode admin pour ajuster, ajouter ou supprimer des îles en base.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-300">Sélectionne une île pour voir sa fiche détaillée.</p>
+              )}
+            </aside>
+          </main>
+        </div>
       )}
 
       {!showHUD && (

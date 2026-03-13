@@ -17,7 +17,7 @@ services:
     container_name: op_backend
     ports:
       - "4000:4000"
-    command: npm run dev
+    command: sh -c "npm install && npm run dev"
     volumes:
       - ./apps-server:/usr/src/app
       - /usr/src/app/node_modules

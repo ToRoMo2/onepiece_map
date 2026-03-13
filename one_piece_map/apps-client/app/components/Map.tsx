@@ -23,6 +23,23 @@ type PlanetTextures = {
   redLineAlphaMap: THREE.CanvasTexture;
 };
 
+function createToonGradientMap(): THREE.DataTexture {
+  const colors = new Uint8Array([
+    110, 110, 110,
+    170, 170, 170,
+    220, 220, 220,
+    255, 255, 255,
+  ]);
+
+  const texture = new THREE.DataTexture(colors, 4, 1, THREE.RGBFormat);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function latLonToVector3(lat: number, lon: number, radius: number): THREE.Vector3 {
   const phi = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon + 180);
@@ -218,19 +235,19 @@ function createPlanetTextures(size = 1024): PlanetTextures {
 
 function Planet() {
   const textures = useMemo(() => createPlanetTextures(1024), []);
+  const toonGradientMap = useMemo(() => createToonGradientMap(), []);
 
   return (
     <group>
-      {/* Ocean sphere: smooth, reflective, with subtle wave normals. */}
-      <mesh castShadow receiveShadow>
+      {/* Ocean sphere: bright toon shading keeps the full globe readable from any angle. */}
+      <mesh>
         <sphereGeometry args={[1, 256, 256]} />
-        <meshStandardMaterial
+        <meshToonMaterial
           map={textures.oceanColorMap}
-          roughness={0.24}
-          metalness={0.28}
-          normalMap={textures.oceanNormalMap}
-          normalScale={new THREE.Vector2(0.45, 0.45)}
-          envMapIntensity={0.6}
+          gradientMap={toonGradientMap}
+          color="#d7f3ff"
+          emissive={new THREE.Color("#184d77")}
+          emissiveIntensity={0.2}
         />
       </mesh>
 
@@ -239,16 +256,18 @@ function Planet() {
         the grayscale texture changes vertex height on the GPU (black = low, white = high),
         so the Red Line is physically sculpted into rocky mountains instead of a flat painted band.
       */}
-      <mesh castShadow receiveShadow>
+      <mesh>
         <sphereGeometry args={[1.006, 256, 256]} />
-        <meshStandardMaterial
+        <meshToonMaterial
           map={textures.redLineColorMap}
           alphaMap={textures.redLineAlphaMap}
           displacementMap={textures.redLineDisplacementMap}
           displacementScale={0.12}
           displacementBias={-0.01}
-          roughness={0.88}
-          metalness={0.08}
+          gradientMap={toonGradientMap}
+          color="#f7c6a1"
+          emissive={new THREE.Color("#4a1f14")}
+          emissiveIntensity={0.18}
           opacity={0.95}
           transparent
           depthWrite
@@ -403,18 +422,14 @@ function IslandMarkers({ islands, selectedIslandId, onSelectIsland }: Pick<OnePi
           <mesh
             key={island.id}
             position={markerPosition}
-            castShadow
-            receiveShadow
             onClick={(event) => {
               event.stopPropagation();
               onSelectIsland(island.id);
             }}
           >
             <sphereGeometry args={[isSelected ? 0.026 : 0.02, 16, 16]} />
-            <meshStandardMaterial
+            <meshToonMaterial
               color={isSelected ? "#f59e0b" : "#7c4a1d"}
-              roughness={0.9}
-              metalness={0.05}
               emissive={isSelected ? new THREE.Color("#f97316") : new THREE.Color("#000000")}
               emissiveIntensity={isSelected ? 0.45 : 0}
             />
@@ -469,23 +484,22 @@ export default function OnePieceMap({ islands, selectedIslandId, onSelectIsland,
     <div className="relative h-screen w-full">
       <Canvas
         camera={{ position: [0, 0.4, 2.8], fov: 45, near: 0.1, far: 100 }}
-        shadows
         dpr={[1, 2]}
         gl={{ antialias: true }}
       >
         <color attach="background" args={["#08131f"]} />
 
-        <ambientLight intensity={0.35} />
+        <ambientLight intensity={1.25} />
+        <hemisphereLight args={["#d8f4ff", "#21405f", 1.15]} />
 
         <directionalLight
           position={[4, 3.5, 2.5]}
-          intensity={1.7}
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-camera-near={0.5}
-          shadow-camera-far={15}
-          shadow-bias={-0.0001}
+          intensity={0.5}
+        />
+
+        <directionalLight
+          position={[-3, -1.5, -2]}
+          intensity={0.35}
         />
 
         <Planet />
